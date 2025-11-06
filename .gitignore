@@ -1,0 +1,93 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node modules
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+out/
+.storybook-out/
+
+# Vite / Rollup / Parcel caches
+.vite/
+.rollup.cache
+.parcel-cache/
+
+# Testing
+coverage/
+.nyc_output/
+jest-html-reporters-*/ 
+
+# Env files
+.env
+.env.local
+.env.*.local
+# keep templates
+!.env.example
+!.env*.example
+
+# Editor/OS junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc caches
+.cache/
+.eslintcache
+.stylelintcache
+.next-turbo/
+turbo/
+.pnp.cjs
+.pnp.loader.mjs
+.pnp.loader.js
+.pnp.data.json
+.pnpm-debug.log*
+
+# Storybook
+storybook-static/
+.out/
+# Playwright / Cypress
+playwright-report/
+playwright/.cache/
+test-results/
+cypress/videos/
+cypress/screenshots/
+cypress/downloads/
+
+# Expo/Web (if applicable)
+.expo/
+.expo-shared/
+
+# VSCode test settings
+.vscode-test/
+
+# Local TLS certs (if any)
+*.pem
+*.crt
+*.key
+
+# Temporary files
+*.swp
+*.swo
+*.tmp
+*.temp
+
+# Images processed caches
+.imagemin-cache/
