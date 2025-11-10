@@ -341,79 +341,82 @@ export default function App() {
     showToast("Duplicated into form. Change the name and submit.");
   }, [currentVersion, showToast]);
 
-  const setAsProduction = useCallback(async () => {
-    if (!langfuse) {
-      setError(
-        "Langfuse SDK is unavailable. Install @langfuse/client and set credentials."
-      );
-      showToast("SDK not available");
-      return;
-    }
-    if (!selectedMeta || !currentVersion) {
-      showToast("Select a prompt version first");
-      return;
-    }
-    const name = selectedMeta.name;
-    const targetVersion = currentVersion.version;
-    if (!targetVersion) {
-      showToast("Version is undefined");
-      return;
-    }
-    if (
-      !window.confirm(
-        `Set version #${targetVersion} of “${name}” as production?`
-      )
-    )
-      return;
-
-    setLoading(true);
-    setError("");
-    try {
+  const setAsProduction = useCallback(
+    async () => {
+      if (!langfuse) {
+        setError(
+          "Langfuse SDK is unavailable. Install @langfuse/client and set credentials."
+        );
+        showToast("SDK not available");
+        return;
+      }
+      if (!selectedMeta || !currentVersion) {
+        showToast("Select a prompt version first");
+        return;
+      }
+      const name = selectedMeta.name;
+      const targetVersion = currentVersion.version;
+      if (!targetVersion) {
+        showToast("Version is undefined");
+        return;
+      }
       if (
-        productionVersion &&
-        productionVersion.version &&
-        productionVersion.version !== targetVersion
-      ) {
-        const prev = (productionVersion.labels || []).filter(
+        !window.confirm(
+          `Set version #${targetVersion} of “${name}” as production?`
+        )
+      )
+        return;
+
+      setLoading(true);
+      setError("");
+      try {
+        if (
+          productionVersion &&
+          productionVersion.version &&
+          productionVersion.version !== targetVersion
+        ) {
+          const prev = (productionVersion.labels || []).filter(
+            (l) => l !== "production" && !RESERVED_LABELS.has(l)
+          );
+          await langfuse.prompt.update({
+            name,
+            version: productionVersion.version,
+            newLabels: prev,
+          });
+        }
+        const cleaned = (currentVersion.labels || []).filter(
           (l) => l !== "production" && !RESERVED_LABELS.has(l)
         );
+        const newLabels = Array.from(new Set([...cleaned, "production"]));
         await langfuse.prompt.update({
           name,
-          version: productionVersion.version,
-          newLabels: prev,
+          version: targetVersion,
+          newLabels,
         });
-      }
-      const cleaned = (currentVersion.labels || []).filter(
-        (l) => l !== "production" && !RESERVED_LABELS.has(l)
-      );
-      const newLabels = Array.from(new Set([...cleaned, "production"]));
-      await langfuse.prompt.update({
-        name,
-        version: targetVersion,
-        newLabels,
-      });
 
-      showToast("Production label updated");
-      await fetchPrompts();
-      handleSelectPrompt(name);
-    } catch (err) {
-      const msg =
-        err?.message ||
-        "Failed to update production label (check SDK credentials/host)";
-      setError(msg);
-      showToast("Failed to set production");
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    currentVersion,
-    fetchPrompts,
-    handleSelectPrompt,
-    langfuse,
-    productionVersion,
-    selectedMeta,
-    showToast,
-  ]);
+        showToast("Production label updated");
+        await fetchPrompts();
+        handleSelectPrompt(name);
+      } catch (err) {
+        const msg =
+          err?.message ||
+          "Failed to update production label (check SDK credentials/host)";
+        setError(msg);
+        showToast("Failed to set production");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      currentVersion,
+      fetchPrompts,
+      handleSelectPrompt,
+      langfuse,
+      productionVersion,
+      selectedMeta,
+      showToast,
+    ]
+  );
 
   // --- CHAT EDITOR HANDLERS ---
   const handleAddChatRow = useCallback((role) => {
@@ -473,10 +476,7 @@ export default function App() {
 
       let tags = [];
       if (formTags?.trim()) {
-        tags = formTags
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
+        tags = formTags.split(",").map((s) => s.trim()).filter(Boolean);
       }
       // enforce single agent tag
       tags = applyAgentTag(tags, formAgent?.trim());
@@ -551,21 +551,58 @@ export default function App() {
     ]
   );
 
-  // --- FILTERED LIST for flat table (optional; still available) ---
-  const filteredPrompts = useMemo(() => {
-    if (!query.trim()) return prompts;
-    const q = query.toLowerCase();
-    return prompts.filter((p) => {
-      const labels = Array.isArray(p.labels) ? p.labels.join(" ") : "";
-      const tags = Array.isArray(p.tags) ? p.tags.join(" ") : "";
-      return (
-        p.name.toLowerCase().includes(q) ||
-        (p.type || "").toLowerCase().includes(q) ||
-        labels.toLowerCase().includes(q) ||
-        tags.toLowerCase().includes(q)
-      );
-    });
-  }, [prompts, query]);
+  // --- AGENT ENTRIES (SEARCH + UNASSIGNED AT BOTTOM) ---
+  const agentEntries = useMemo(() => {
+    const entries = Object.entries(agentsMap || {});
+    const q = query.trim().toLowerCase();
+
+    // If no search, just sort agents with "Unassigned" at the bottom
+    if (!q) {
+      const normal = [];
+      let unassigned = null;
+      for (const [agent, items] of entries) {
+        if (agent === "Unassigned") unassigned = [agent, items];
+        else normal.push([agent, items]);
+      }
+      normal.sort((a, b) => a[0].localeCompare(b[0]));
+      if (unassigned) normal.push(unassigned);
+      return normal;
+    }
+
+    // With search: filter prompts per agent
+    const filtered = [];
+    for (const [agent, items] of entries) {
+      const agentMatch = agent.toLowerCase().includes(q);
+
+      const filteredItems = items.filter((p) => {
+        const labels = Array.isArray(p.labels) ? p.labels.join(" ") : "";
+        const tags = Array.isArray(p.tags) ? p.tags.join(" ") : "";
+        return (
+          p.name.toLowerCase().includes(q) ||
+          (p.type || "").toLowerCase().includes(q) ||
+          labels.toLowerCase().includes(q) ||
+          tags.toLowerCase().includes(q)
+        );
+      });
+
+      if (agentMatch) {
+        filtered.push([agent, items]);
+      } else if (filteredItems.length > 0) {
+        filtered.push([agent, filteredItems]);
+      }
+    }
+
+    const normal = [];
+    let unassigned = null;
+    for (const [agent, items] of filtered) {
+      if (agent === "Unassigned") unassigned = [agent, items];
+      else normal.push([agent, items]);
+    }
+    normal.sort((a, b) => a[0].localeCompare(b[0]));
+    if (unassigned) normal.push(unassigned);
+
+    return normal;
+  }, [agentsMap, query]);
 
   // --- RENDER ---
   return (
@@ -585,7 +622,7 @@ export default function App() {
               <button className="btn" onClick={fetchPrompts} disabled={loading}>
                 ↻ Refresh
               </button>
-              <button className="btn primary" onClick={() => startNewPrompt()}>
+              <button className="btn primary" onClick={startNewPrompt}>
                 + New prompt
               </button>
             </>
@@ -607,289 +644,123 @@ export default function App() {
 
         {mode === "list" && (
           <>
-            Search / Filters
+            {/* Search */}
             <div className="toolbar">
               <div className="search-wrap">
                 <span className="search-ico">🔍</span>
                 <input
-                  placeholder="Search prompts…"
+                  placeholder="Search agents & prompts…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
               </div>
-              <div className="dropdown">Names, Tags ▾</div>
-              <div className="dropdown">Filters ▾</div>
             </div>
-            {/* Agents accordion */}
-            {/* <div className="table-card">
-              <div className="panel-head">Agents</div>
-              <ul className="agent-accordion">
-                {Object.keys(agentsMap)
-                  .sort()
-                  .map((agent) => {
-                    const items = agentsMap[agent] || [];
-                    const isOpen = !!openAgents[agent];
-                    return (
-                      <li key={agent} className="agent-item">
-                        <button
-                          className="agent-row"
-                          onClick={() =>
-                            setOpenAgents((s) => ({
-                              ...s,
-                              [agent]: !s[agent],
-                            }))
-                          }
-                        >
-                          <span className="agent-name">{agent}</span>
-                          <span className="count">{items.length}</span>
-                          <span className="caret">{isOpen ? "▾" : "▸"}</span>
-                        </button>
 
-                        {isOpen && (
-                          <div className="agent-prompts">
-                            <table className="table compact">
-                              <thead>
-                                <tr>
-                                  <th>Name</th>
-                                  <th>Type</th>
-                                  <th>Labels</th>
-                                  <th>Tags</th>
-                                  <th style={{ width: 96, textAlign: "center" }}>
-                                    Actions
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {items.map((p) => (
-                                  <tr
-                                    key={p.name}
-                                    className="row-link"
-                                    onClick={() => handleSelectPrompt(p.name)}
-                                  >
-                                    <td>
-                                      <span className="name-pill">{p.name}</span>
-                                    </td>
-                                    <td>
-                                      <span className="type-badge">{p.type}</span>
-                                    </td>
-                                    <td>{(p.labels || []).join(", ")}</td>
-                                    <td className="tags-cell">
-                                      {(p.tags || []).map((t) => (
-                                        <span key={t} className="tag">
-                                          {t}
-                                        </span>
-                                      ))}
-                                    </td>
-                                    <td
-                                      className="actions-cell"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <button
-                                        className="icon-btn"
-                                        title="Duplicate"
-                                        onClick={async () => {
-                                          await handleSelectPrompt(p.name);
-                                          setTimeout(duplicatePrompt, 200);
-                                        }}
-                                      >
-                                        ⧉
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-              </ul>
-            </div> */}
             {/* Agents accordion */}
             <div className="table-card">
               <div className="panel-head">Agents</div>
               <ul className="agent-accordion">
-                {Object.keys(agentsMap)
-                  .sort()
-                  .map((agent) => {
-                    const items = agentsMap[agent] || [];
-                    const isOpen = !!openAgents[agent];
-                    return (
-                      <li
-                        key={agent}
-                        className={`agent-item ${isOpen ? "open" : ""}`}
-                      >
-                        <button
-                          className="agent-row"
-                          aria-expanded={isOpen}
-                          aria-controls={`agent-panel-${agent}`}
-                          onClick={() =>
-                            setOpenAgents((s) => ({ ...s, [agent]: !s[agent] }))
-                          }
-                        >
-                          <span className="agent-left">
-                            <span
-                              className={`caret ${isOpen ? "open" : ""}`}
-                              aria-hidden="true"
-                            >
-                              ▸
-                            </span>
-                            <span className="agent-name">{agent}</span>
-                          </span>
-                          <span
-                            className="count"
-                            title={`${items.length} prompts`}
-                          >
-                            {items.length}
-                          </span>
-                        </button>
-
-                        {isOpen && (
-                          <div
-                            id={`agent-panel-${agent}`}
-                            className="agent-prompts"
-                            role="region"
-                            aria-label={`${agent} prompts`}
-                          >
-                            <table className="table compact">
-                              <thead>
-                                <tr>
-                                  <th>Name</th>
-                                  <th>Type</th>
-                                  <th>Labels</th>
-                                  <th>Tags</th>
-                                  <th
-                                    style={{ width: 96, textAlign: "center" }}
-                                  >
-                                    Actions
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {items.map((p) => (
-                                  <tr
-                                    key={p.name}
-                                    className="row-link"
-                                    onClick={() => handleSelectPrompt(p.name)}
-                                  >
-                                    <td>
-                                      <span className="name-pill">
-                                        {p.name}
-                                      </span>
-                                    </td>
-                                    <td>
-                                      <span className="type-badge">
-                                        {p.type}
-                                      </span>
-                                    </td>
-                                    <td>{(p.labels || []).join(", ")}</td>
-                                    <td className="tags-cell">
-                                      {(p.tags || []).map((t) => (
-                                        <span key={t} className="tag">
-                                          {t}
-                                        </span>
-                                      ))}
-                                    </td>
-                                    <td
-                                      className="actions-cell"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <button
-                                        className="icon-btn"
-                                        title="Duplicate"
-                                        onClick={async () => {
-                                          await handleSelectPrompt(p.name);
-                                          setTimeout(duplicatePrompt, 200);
-                                        }}
-                                      >
-                                        ⧉
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-              </ul>
-            </div>
-            {/* Optional: keep a flat list for power users */}
-            <div className="table-card" style={{ marginTop: 16 }}>
-              <div className="panel-head">All Prompts</div>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Versions</th>
-                    <th>Type</th>
-                    <th>Tags</th>
-                    <th style={{ width: "96px", textAlign: "center" }}>
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading && prompts.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="muted">
-                        Loading…
-                      </td>
-                    </tr>
-                  )}
-                  {!loading && filteredPrompts.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="muted">
-                        No prompts
-                      </td>
-                    </tr>
-                  )}
-                  {filteredPrompts.map((p) => (
-                    <tr
-                      key={p.name}
-                      className="row-link"
-                      onClick={() => handleSelectPrompt(p.name)}
+                {agentEntries.map(([agent, items]) => {
+                  const isOpen = !!openAgents[agent];
+                  return (
+                    <li
+                      key={agent}
+                      className={`agent-item ${isOpen ? "open" : ""}`}
                     >
-                      <td>
-                        <span className="name-pill">{p.name}</span>
-                      </td>
-                      <td>
-                        {Array.isArray(p.versions)
-                          ? p.versions.length
-                          : p.versions || 0}
-                      </td>
-                      <td>
-                        <span className="type-badge">{p.type}</span>
-                      </td>
-                      <td className="tags-cell">
-                        {(p.tags || []).map((t) => (
-                          <span key={t} className="tag">
-                            {t}
-                          </span>
-                        ))}
-                      </td>
-                      <td
-                        className="actions-cell"
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        className="agent-row"
+                        aria-expanded={isOpen}
+                        aria-controls={`agent-panel-${agent}`}
+                        onClick={() =>
+                          setOpenAgents((s) => ({ ...s, [agent]: !s[agent] }))
+                        }
                       >
-                        <button
-                          className="icon-btn"
-                          title="Duplicate"
-                          onClick={async () => {
-                            await handleSelectPrompt(p.name);
-                            setTimeout(duplicatePrompt, 200);
-                          }}
+                        <span className="agent-left">
+                          <span
+                            className={`caret ${isOpen ? "open" : ""}`}
+                            aria-hidden="true"
+                          >
+                            ▸
+                          </span>
+                          <span className="agent-name">{agent}</span>
+                        </span>
+                        <span
+                          className="count"
+                          title={`${items.length} prompts`}
                         >
-                          ⧉
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          {items.length}
+                        </span>
+                      </button>
+
+                      {isOpen && (
+                        <div
+                          id={`agent-panel-${agent}`}
+                          className="agent-prompts"
+                          role="region"
+                          aria-label={`${agent} prompts`}
+                        >
+                          <table className="table compact">
+                            <thead>
+                              <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Labels</th>
+                                <th>Tags</th>
+                                <th
+                                  style={{ width: 96, textAlign: "center" }}
+                                >
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {items.map((p) => (
+                                <tr
+                                  key={p.name}
+                                  className="row-link"
+                                  onClick={() => handleSelectPrompt(p.name)}
+                                >
+                                  <td>
+                                    <span className="name-pill">{p.name}</span>
+                                  </td>
+                                  <td>
+                                    <span className="type-badge">
+                                      {p.type}
+                                    </span>
+                                  </td>
+                                  <td>{(p.labels || []).join(", ")}</td>
+                                  <td className="tags-cell">
+                                    {(p.tags || []).map((t) => (
+                                      <span key={t} className="tag">
+                                        {t}
+                                      </span>
+                                    ))}
+                                  </td>
+                                  <td
+                                    className="actions-cell"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      className="icon-btn"
+                                      title="Duplicate"
+                                      onClick={async () => {
+                                        await handleSelectPrompt(p.name);
+                                        setTimeout(duplicatePrompt, 200);
+                                      }}
+                                    >
+                                      ⧉
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           </>
         )}
@@ -907,7 +778,8 @@ export default function App() {
                       .sort((a, b) => b - a)
                       .map((v) => {
                         const isProd =
-                          productionVersion && productionVersion.version === v;
+                          productionVersion &&
+                          productionVersion.version === v;
                         const isLatest =
                           latestVersion && latestVersion.version === v;
                         const isCurrent = currentVersion.version === v;
@@ -926,7 +798,8 @@ export default function App() {
                                   .then((ver) => setCurrentVersion(ver))
                                   .catch((err) =>
                                     setError(
-                                      err?.message || "Failed to fetch version"
+                                      err?.message ||
+                                        "Failed to fetch version"
                                     )
                                   )
                                   .finally(() => setLoading(false));
@@ -960,10 +833,14 @@ export default function App() {
                   <div className="panel-head">
                     <div className="title">
                       {currentVersion.name}{" "}
-                      <span className="muted"># {currentVersion.version}</span>
+                      <span className="muted">
+                        # {currentVersion.version}
+                      </span>
                     </div>
                     <div className="inline">
-                      <span className="type-badge">{currentVersion.type}</span>
+                      <span className="type-badge">
+                        {currentVersion.type}
+                      </span>
                       {(currentVersion.labels || []).map((lbl) => (
                         <span
                           key={lbl}
@@ -1019,14 +896,15 @@ export default function App() {
                       </pre>
                     </details>
                   )}
-                  {currentVersion.tags && currentVersion.tags.length > 0 && (
-                    <div className="kv">
-                      <span className="k">Tags</span>
-                      <span className="v">
-                        {currentVersion.tags.join(", ")}
-                      </span>
-                    </div>
-                  )}
+                  {currentVersion.tags &&
+                    currentVersion.tags.length > 0 && (
+                      <div className="kv">
+                        <span className="k">Tags</span>
+                        <span className="v">
+                          {currentVersion.tags.join(", ")}
+                        </span>
+                      </div>
+                    )}
                 </section>
               </div>
             )}
