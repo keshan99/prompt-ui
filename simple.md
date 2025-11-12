@@ -14,6 +14,17 @@ To allow approved business or support users to:
 > ⚠️ **Note:** This guide applies only to the official **production environment**. Please follow each step carefully to avoid accidental disruptions.
 
 ---
+### After Logging In
+
+After you log in, you will see a list of **Organizations**.  
+Select **XLPlues_dev** and then open **demo_project**.
+
+If you accidentally end up in the wrong project/environment or if your dashboard looks different from the screenshots, don’t worry — at the top of the page (as shown in the image), you’ll see the **current environment/organization name**.  
+Click it, and you’ll get the full list of organizations. From there, select **XLPlues_dev** and then choose **demo_project**.
+
+**📸 Screenshot Placeholder:**  
+`[Add screenshot: Organization dropdown showing XLPlues_dev and demo_project selection]`
+
 
 ## 🪜 Step-by-Step Guide
 
