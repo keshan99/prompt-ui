@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  prompt-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prompt-management-ui
+    ports:
+      - "5173:80"   # UI available on http://localhost:5173
+    # environment:
+    #   VITE_LANGFUSE_PUBLIC_KEY: "pk-replace-here"
+    #   VITE_LANGFUSE_SECRET_KEY: "sk-replace-here"
+    #   VITE_LANGFUSE_BASE_URL: "https://your-langfuse-server.com"
+    env_file:
+      - .env
+    restart: unless-stopped
